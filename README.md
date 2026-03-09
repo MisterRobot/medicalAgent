@@ -1,6 +1,6 @@
 # Medical Agent - 智能医疗影像分析平台
 
-基于 **Next.js (前端)** + **FastAPI (后端)** 的现代化医疗影像分析系统，集成通义千问 (Qwen) 多模态大模型，提供专业的影像诊断服务。
+基于 **Next.js (前端)** + **FastAPI (后端)** 的现代化医疗影像分析系统，集成多模态大模型，提供专业的影像诊断服务。
 
 ## 🏗️ 系统架构概览
 
@@ -124,7 +124,7 @@ oss:
   endpoint: "oss-cn-beijing.aliyuncs.com"
 
 models:
-  - name: "qwen-plus"
+  - name: ""
     api_key: "sk-..."
     enable_thinking: false
 ```
@@ -155,7 +155,6 @@ models:
 
 ### 5. 多模型路由
 支持 6 种模型动态切换：
-- **通义千问系列**: qwen3-vl-plus / qwen2.5-vl-72b / qwen2.5-vl-7b
 - **医学专用**: Google MedGemma（医学微调版）
 - **本地部署**: Llama-3-V-20B（支持私有化）
 
