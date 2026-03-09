@@ -1,0 +1,13 @@
+# 模型配置文件
+# 格式：
+# - name: 显示的模型名称
+#   api_base: API 服务地址
+#   api_key: API 密钥
+#   model_id: 实际调用的模型 ID (可选，如果不同于 name)
+
+- name: "qwen-plus"
+  api_base: ""
+  api_key: ""
+  model_id: ""
+  enable_thinking: true
+

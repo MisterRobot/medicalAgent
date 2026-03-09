@@ -1,0 +1,177 @@
+name: Deploy Medical Agent
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'medical_agent/**'
+      - '.github/workflows/deploy_medical_agent.yml'
+    tags:
+      - 'med-v*'
+  workflow_dispatch:
+
+# 以下环境变量需要在 GitHub Repository Settings > Secrets and variables > Actions 中配置：
+# - ACR_REGISTRY: 阿里云容器镜像服务(ACR)的仓库地址，例如 crpi-xxxxx.cn-hangzhou.personal.cr.aliyuncs.com
+# - ACR_NAMESPACE: ACR 命名空间名称
+# - ACR_USERNAME: ACR 登录用户名
+# - ACR_PASSWORD: ACR 登录密码
+# - SSH_HOST / SSH_USER / SSH_KEY: 部署目标服务器的 SSH 信息
+# - MEDICAL_DB_HOST / MEDICAL_DB_PORT / MEDICAL_DB_USER / MEDICAL_DB_PASSWORD / MEDICAL_DB_NAME: 数据库连接信息
+# - MEDICAL_JWT_SECRET: JWT 签名密钥
+env:
+  ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+  ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+  FRONTEND_IMAGE: medical-agent-frontend
+  BACKEND_IMAGE: medical-agent-backend
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Aliyun ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Set Image Tag
+        run: echo "TAG=$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      # 1. Build Backend
+      - name: Build and Push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./medical_agent/backend
+          file: ./medical_agent/backend/Dockerfile
+          push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          tags: ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.BACKEND_IMAGE }}:${{ env.TAG }},${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.BACKEND_IMAGE }}:latest
+
+      # 2. Build Frontend
+      # Note: We pass default API URLs. In production, these should be the public URLs of the services.
+      # Since we don't know the exact domain/IP here, we default to localhost ports which user might tunnel or access locally.
+      # Ideally, these should be passed as secrets or derived from the deployment environment.
+      - name: Build and Push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./medical_agent/frontend
+          file: ./medical_agent/frontend/Dockerfile
+          push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          tags: ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.FRONTEND_IMAGE }}:${{ env.TAG }},${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.FRONTEND_IMAGE }}:latest
+
+      # 3. Deploy
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            # 定义部署目录
+            DEPLOY_DIR="/opt/medical-agent"
+            mkdir -p $DEPLOY_DIR
+            mkdir -p $DEPLOY_DIR/config
+
+            if [ -z "${{ secrets.MEDICAL_DB_HOST }}" ] || [ -z "${{ secrets.MEDICAL_DB_PORT }}" ] || [ -z "${{ secrets.MEDICAL_DB_USER }}" ] || [ -z "${{ secrets.MEDICAL_DB_PASSWORD }}" ] || [ -z "${{ secrets.MEDICAL_DB_NAME }}" ] || [ -z "${{ secrets.MEDICAL_JWT_SECRET }}" ]; then
+              echo "Missing required secrets: MEDICAL_DB_HOST, MEDICAL_DB_PORT, MEDICAL_DB_USER, MEDICAL_DB_PASSWORD, MEDICAL_DB_NAME, MEDICAL_JWT_SECRET"
+              exit 1
+            fi
+            
+            # 进入目录
+            cd $DEPLOY_DIR
+
+            # 确保跨项目共享网络存在（wegame-net）
+            # 因为 docker-compose.yml 中使用 external: true，网络必须预先创建
+            docker network inspect wegame-net >/dev/null 2>&1 || docker network create wegame-net
+            
+            # 写入 app.yaml
+            cat > $DEPLOY_DIR/config/app.yaml <<EOF
+            db:
+              host: ${{ secrets.MEDICAL_DB_HOST }}
+              port: ${{ secrets.MEDICAL_DB_PORT }}
+              user: ${{ secrets.MEDICAL_DB_USER }}
+              password: ${{ secrets.MEDICAL_DB_PASSWORD }}
+              name: ${{ secrets.MEDICAL_DB_NAME }}
+              pool_size: 5
+
+            jwt:
+              secret: ${{ secrets.MEDICAL_JWT_SECRET }}
+              alg: HS256
+              expire_minutes: 10080
+
+            token:
+              initial_tokens: 100
+              cost_per_analysis: 10
+
+            cors:
+              allow_origins:
+                - "http://${{ secrets.SSH_HOST }}:3000"
+                - "http://${{ secrets.SSH_HOST }}"
+                - "https://${{ secrets.SSH_HOST }}"
+              allow_origin_regex: '^https?://(${{ secrets.SSH_HOST }}|([a-z0-9-]+\.)?aicodelab\.cc)(:\d+)?$'
+              allow_credentials: false
+              allow_methods:
+                - "*"
+              allow_headers:
+                - "*"
+            EOF
+
+            # 写入 docker-compose.yml
+            cat > docker-compose.yml <<EOF
+            version: '3.8'
+
+            services:
+              # Python Backend
+              backend:
+                container_name: medical-agent-backend
+                image: ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.BACKEND_IMAGE }}:${{ env.TAG }}
+                restart: always
+                ports:
+                  - "8000:8000"
+                environment:
+                  - TZ=Asia/Shanghai
+                volumes:
+                  - ./backend-logs:/app/logs
+                  - ./config/app.yaml:/app/config/app.yaml
+                networks:
+                  - wegame-net
+
+              # Next.js Frontend
+              frontend:
+                container_name: medical-agent-frontend
+                image: ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.FRONTEND_IMAGE }}:${{ env.TAG }}
+                restart: always
+                ports:
+                  - "3000:3000"
+                environment:
+                  - TZ=Asia/Shanghai
+                  - NODE_ENV=production
+                volumes:
+                  - ./frontend-logs:/app/logs
+                depends_on:
+                  - backend
+                networks:
+                  - wegame-net
+            
+            networks:
+              wegame-net:
+                external: true
+            EOF
+            
+            # 登录 ACR
+            docker login -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }} ${{ env.ACR_REGISTRY }}
+            
+            # 拉取新镜像并重启
+            docker compose pull
+            docker compose up -d
+            
+            # 清理旧镜像
+            docker image prune -f

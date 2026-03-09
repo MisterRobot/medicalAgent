@@ -1,0 +1,16 @@
+# 阿里云 OSS 配置
+oss:
+  access_key_id: ""
+  access_key_secret: ""
+  endpoint: ""
+  bucket_name: ""
+  region: ""
+
+# 大模型配置
+models:
+  - name: ""
+    api_base: ""
+    api_key: ""
+    model_id: ""
+    enable_thinking: false
+

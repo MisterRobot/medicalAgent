@@ -1,0 +1,27 @@
+db:
+  host: localhost
+  port: 3306
+  user: root
+  password: 
+  name: wegame_medical
+  pool_size: 5
+
+jwt:
+  secret: change_me
+  alg: HS256
+  expire_minutes: 10080
+
+token:
+  initial_tokens: 100
+  cost_per_analysis: 10
+
+cors:
+  allow_origins:
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
+  allow_origin_regex: '^https?://(localhost|127\.0\.0\.1|192\.140\.166\.132|([a-z0-9-]+\.)?aicodelab\.cc)(:\d+)?$'
+  allow_credentials: false
+  allow_methods:
+    - "*"
+  allow_headers:
+    - "*"
