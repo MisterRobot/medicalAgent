@@ -30,7 +30,7 @@
 - **智能批处理**: 后端自动将序列切片分组 (Batch Processing)，顺序提交给 AI 进行分析，避免 Token 溢出并提高稳定性。
 
 ### 3. AI 深度诊断
-- **多模型支持**: 动态切换 Qwen-Plus, Qwen-VL-Max 等模型。
+- **多模型支持**: 动态切换模型。
 - **结构化输出**: 强制 AI 输出严格的 JSON 数据，包含器官 (Organ)、状态 (Status)、严重程度 (Severity) 和详细描述 (Details)。
 - **思维链 (Thinking Process)**: 可视化展示 AI 的深度思考过程（可折叠），增加诊断透明度。
 
